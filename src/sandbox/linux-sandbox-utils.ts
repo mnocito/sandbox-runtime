@@ -660,7 +660,19 @@ export async function wrapCommandWithSandboxLinux(
     return command
   }
 
-  const bwrapArgs: string[] = ['--new-session', '--die-with-parent']
+  // Always use --unshare-user to create a user namespace, which is required for
+  // bwrap to work in container environments like Modal/Docker. This doesn't reduce
+  // security - it just allows bwrap to use its other namespace features.
+  // --uid 0 --gid 0 maps the sandboxed user to root inside the namespace.
+  const bwrapArgs: string[] = [
+    '--new-session',
+    '--die-with-parent',
+    '--unshare-user',
+    '--uid',
+    '0',
+    '--gid',
+    '0',
+  ]
   let seccompFilterPath: string | undefined = undefined
 
   try {
