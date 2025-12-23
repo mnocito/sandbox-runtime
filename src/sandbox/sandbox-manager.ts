@@ -86,13 +86,15 @@ async function filterNetworkRequest(
   host: string,
   sandboxAskCallback?: SandboxAskCallback,
 ): Promise<boolean> {
-  if (!config) {
-    logForDebugging('No config available, denying network request')
+  if (!config || !config.network) {
+    logForDebugging(
+      'No config or network config available, denying network request',
+    )
     return false
   }
 
   // Check denied domains first
-  for (const deniedDomain of config.network.deniedDomains) {
+  for (const deniedDomain of config.network.deniedDomains ?? []) {
     if (matchesDomainPattern(host, deniedDomain)) {
       logForDebugging(`Denied by config rule: ${host}:${port}`)
       return false
@@ -100,7 +102,7 @@ async function filterNetworkRequest(
   }
 
   // Check allowed domains
-  for (const allowedDomain of config.network.allowedDomains) {
+  for (const allowedDomain of config.network.allowedDomains ?? []) {
     if (matchesDomainPattern(host, allowedDomain)) {
       logForDebugging(`Allowed by config rule: ${host}:${port}`)
       return true
@@ -234,9 +236,23 @@ async function initialize(
   // Register cleanup handlers first time
   registerCleanup()
 
-  // Initialize network infrastructure
+  // Initialize network infrastructure (only if network config is provided)
   initializationPromise = (async () => {
     try {
+      // Skip network infrastructure if no network config
+      if (!config.network) {
+        logForDebugging(
+          'No network config provided, skipping network infrastructure',
+        )
+        const context: HostNetworkManagerContext = {
+          httpProxyPort: 0,
+          socksProxyPort: 0,
+          linuxBridge: undefined,
+        }
+        managerContext = context
+        return context
+      }
+
       // Conditionally start proxy servers based on config
       let httpProxyPort: number
       if (config.network.httpProxyPort !== undefined) {
@@ -401,12 +417,12 @@ function getFsWriteConfig(): FsWriteRestrictionConfig {
 }
 
 function getNetworkRestrictionConfig(): NetworkRestrictionConfig {
-  if (!config) {
+  if (!config || !config.network) {
     return {}
   }
 
-  const allowedHosts = config.network.allowedDomains
-  const deniedHosts = config.network.deniedDomains
+  const allowedHosts = config.network.allowedDomains ?? []
+  const deniedHosts = config.network.deniedDomains ?? []
 
   return {
     ...(allowedHosts.length > 0 && { allowedHosts }),
@@ -509,6 +525,7 @@ async function wrapWithSandbox(
   // 1. customConfig has network.allowedDomains defined (even if empty array = block all)
   // 2. OR config has network.allowedDomains defined (even if empty array = block all)
   // An empty allowedDomains array means "no domains allowed" = block all network access
+  // If network config is completely omitted, no network isolation is applied
   const hasNetworkConfig =
     customConfig?.network?.allowedDomains !== undefined ||
     config?.network?.allowedDomains !== undefined
@@ -516,11 +533,12 @@ async function wrapWithSandbox(
   // Get the actual allowed domains list for proxy filtering
   const allowedDomains =
     customConfig?.network?.allowedDomains ??
-    config?.network.allowedDomains ??
+    config?.network?.allowedDomains ??
     []
 
   // Network RESTRICTION is needed whenever network config is specified
   // This includes empty allowedDomains which means "block all network"
+  // If network config is omitted entirely, no network isolation is applied
   const needsNetworkRestriction = hasNetworkConfig
 
   // Network PROXY is only needed when there are domains to filter

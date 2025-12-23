@@ -147,7 +147,9 @@ export const RipgrepConfigSchema = z.object({
  * Main configuration schema for Sandbox Runtime validation
  */
 export const SandboxRuntimeConfigSchema = z.object({
-  network: NetworkConfigSchema.describe('Network restrictions configuration'),
+  network: NetworkConfigSchema.optional().describe(
+    'Network restrictions configuration (optional - omit to disable network isolation)',
+  ),
   filesystem: FilesystemConfigSchema.describe(
     'Filesystem restrictions configuration',
   ),
